@@ -3,7 +3,7 @@ import { CreateUserPayload } from "../interfaces/CreateUserPayload";
 import { IUser } from "../models/User";
 import { ConflictError, UnauthorizedError } from "../erros/apiError";
 import { jwtPayload } from "../interfaces/JwtPayload";
-import { generateToken } from "./jetService";
+import { generateToken } from "./jwtService";
 
 const registerUser = async (userData: CreateUserPayload): Promise<IUser> => {
   const existingUser = await findUserByEmail(userData.email);
