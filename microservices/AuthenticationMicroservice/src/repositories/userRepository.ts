@@ -1,9 +1,15 @@
 import User, { IUser } from "../models/User";
 import { CreateUserPayload } from "../interfaces/CreateUserPayload";
-import mongoose from "mongoose";
+import { Query } from "mongoose";
 
-const findUserByEmail = async (email: string): Promise<IUser | null> => {
-  let query = User.findOne({ email });
+const findUserByEmail = async (
+  email: string,
+  includePassword: boolean = false
+): Promise<IUser | null> => {
+  let query: Query<IUser | null, IUser> = User.findOne({ email });
+  if (includePassword) {
+    query = query.select("+password");
+  }
   return await query.exec();
 };
 
@@ -12,10 +18,4 @@ const createUser = async (userData: CreateUserPayload): Promise<IUser> => {
   return await newUser.save();
 };
 
-const findUserById = async (
-  id: string | mongoose.Types.ObjectId
-): Promise<IUser | null> => {
-  return await User.findById(id).exec();
-};
-
-export { findUserByEmail, createUser, findUserById };
+export { findUserByEmail, createUser };

@@ -1,5 +1,5 @@
 import express, { Request, Response, Router, NextFunction } from "express";
-import { registerUser } from "../services/authService";
+import { loginUser, registerUser } from "../services/authService";
 import { successResponse } from "../utils/apiResponse";
 import { BadRequestError } from "../erros/apiError";
 
@@ -23,6 +23,25 @@ router.post(
     res
       .status(201)
       .json(successResponse("User registered successfully", newUser));
+  }
+);
+
+/**
+ * @route POST /api/auth/login
+ * @description Login user.
+ * @access Public
+ */
+router.post(
+  "/login",
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      throw new BadRequestError("Email and password are required.");
+    }
+
+    const newUser = await loginUser({ email, password });
+    res.status(200).json(successResponse("User logged in", newUser));
   }
 );
 
