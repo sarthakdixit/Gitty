@@ -1,6 +1,7 @@
-import express, { Request, Response, Router } from "express";
+import express, { Request, Response, Router, NextFunction } from "express";
 import { registerUser } from "../services/authService";
 import { successResponse } from "../utils/apiResponse";
+import { BadRequestError } from "../erros/apiError";
 
 const router: Router = express.Router();
 
@@ -9,17 +10,20 @@ const router: Router = express.Router();
  * @description Register a new user.
  * @access Public
  */
-router.post("/register", async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+router.post(
+  "/register",
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { email, password } = req.body;
 
-  if (!email || !password) {
-    throw new Error("Please enter all fields");
+    if (!email || !password) {
+      throw new BadRequestError("Email and password are required.");
+    }
+
+    const newUser = await registerUser({ email, password });
+    res
+      .status(201)
+      .json(successResponse("User registered successfully", newUser));
   }
-
-  const newUser = await registerUser({ email, password });
-  res
-    .status(201)
-    .json(successResponse("User registered successfully", newUser));
-});
+);
 
 export default router;
