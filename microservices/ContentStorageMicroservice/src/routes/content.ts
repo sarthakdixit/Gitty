@@ -6,6 +6,8 @@ import {
   getBlobsByRepositoryAndUser,
   storeTree,
   getTree,
+  storeCommit,
+  getCommit,
 } from "../services/contentStorageService";
 import { successResponse } from "../utils/apiResponse";
 import {
@@ -18,6 +20,7 @@ import { protect } from "../middlewares/authMiddleware";
 import { findRepositoryById } from "../repositories/repositoryRepository";
 import { RepositoryVisibility } from "../models/Repository";
 import { ITreeEntry } from "../interfaces/Tree";
+import { ICommit } from "../interfaces/Commit";
 
 const router: Router = express.Router();
 
@@ -283,6 +286,89 @@ router.get(
 
     const tree = await getTree(hash);
     res.status(200).json(successResponse("Tree fetched successfully", tree));
+  }
+);
+
+/**
+ * @route POST /api/content/commits
+ * @description Stores a commit object.
+ * @access Private (requires JWT)
+ * @body JSON object representing the ICommit structure.
+ */
+router.post(
+  "/commits",
+  protect,
+  async (req: Request, res: Response, next: NextFunction) => {
+    const uploadedByUserId = req.user?.id;
+    if (!uploadedByUserId) {
+      return next(new UnauthorizedError("User not authenticated."));
+    }
+
+    const { commit, repositoryId } = req.body;
+
+    if (!commit || typeof commit !== "object") {
+      return next(new BadRequestError("Commit object is required."));
+    }
+    if (!repositoryId || typeof repositoryId !== "string") {
+      return next(new BadRequestError("Repository ID is required."));
+    }
+
+    const repo = await findRepositoryById(repositoryId);
+    if (!repo) {
+      return next(
+        new NotFoundError(`Repository with ID '${repositoryId}' not found.`)
+      );
+    }
+    if (
+      repo.visibility === RepositoryVisibility.PRIVATE &&
+      repo.owner.toString() !== uploadedByUserId.toString()
+    ) {
+      return next(
+        new ForbiddenError(
+          "You do not have permission to create commits for this repository."
+        )
+      );
+    }
+
+    const commitHash = await storeCommit(
+      commit as ICommit,
+      uploadedByUserId.toString(),
+      repositoryId
+    );
+    res
+      .status(201)
+      .json(
+        successResponse("Commit stored successfully", { hash: commitHash })
+      );
+  }
+);
+
+/**
+ * @route GET /api/content/commits/:hash
+ * @description Retrieves a commit object by its SHA256 hash.
+ * @access Private (requires JWT) - Access depends on repository visibility and user permissions.
+ * NOTE: For a full VCS, you'd need to pass repositoryId to check permissions,
+ * but for simplicity here, we assume if you have the commit hash, you're authorized to view it (for now).
+ */
+router.get(
+  "/commits/:hash",
+  protect,
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { hash } = req.params;
+    const authenticatedUserId = req.user?.id;
+
+    if (!authenticatedUserId) {
+      throw new UnauthorizedError("User not authenticated.");
+    }
+
+    if (!hash || !/^[0-9a-fA-F]{64}$/.test(hash)) {
+      return next(new BadRequestError("Invalid SHA256 hash format."));
+    }
+
+    const commit = await getCommit(hash);
+    res
+      .status(200)
+      .json(successResponse("Commit fetched successfully", commit));
   }
 );
 
