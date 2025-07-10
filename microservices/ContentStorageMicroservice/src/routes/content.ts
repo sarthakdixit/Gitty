@@ -3,8 +3,9 @@ import fileUpload from "express-fileupload";
 import {
   storeBlob,
   getBlob,
-  calculateSha256,
   getBlobsByRepositoryAndUser,
+  storeTree,
+  getTree,
 } from "../services/contentStorageService";
 import { successResponse } from "../utils/apiResponse";
 import {
@@ -16,6 +17,7 @@ import {
 import { protect } from "../middlewares/authMiddleware";
 import { findRepositoryById } from "../repositories/repositoryRepository";
 import { RepositoryVisibility } from "../models/Repository";
+import { ITreeEntry } from "../interfaces/Tree";
 
 const router: Router = express.Router();
 
@@ -97,6 +99,11 @@ router.get(
   "/blobs/:hash",
   async (req: Request, res: Response, next: NextFunction) => {
     const { hash } = req.params;
+    const authenticatedUserId = req.user?.id;
+
+    if (!authenticatedUserId) {
+      throw new UnauthorizedError("User not authenticated.");
+    }
 
     if (!hash || !/^[0-9a-fA-F]{64}$/.test(hash)) {
       return next(new BadRequestError("Invalid SHA256 hash format."));
@@ -175,6 +182,107 @@ router.get(
       (queryUserId as string) || authenticatedUserId.toString()
     );
     res.status(200).json(successResponse("Blobs fetched successfully", blobs));
+  }
+);
+
+/**
+ * @route POST /api/content/trees
+ * @description Stores a tree object (directory snapshot).
+ * @access Private (requires JWT)
+ * @body JSON object with 'entries' (array of ITreeEntry) and 'repositoryId'.
+ */
+router.post(
+  "/trees",
+  protect,
+  async (req: Request, res: Response, next: NextFunction) => {
+    const uploadedByUserId = req.user?.id;
+    if (!uploadedByUserId) {
+      throw new UnauthorizedError("User not authenticated.");
+    }
+
+    const { entries, repositoryId } = req.body;
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      throw new BadRequestError(
+        "Tree entries are required and must be an array."
+      );
+    }
+    if (!repositoryId || typeof repositoryId !== "string") {
+      throw new BadRequestError("Repository ID is required.");
+    }
+
+    for (const entry of entries) {
+      if (!entry.mode || !entry.type || !entry.hash || !entry.name) {
+        throw new BadRequestError(
+          "Each tree entry must have mode, type, hash, and name."
+        );
+      }
+      if (!["blob", "tree"].includes(entry.type)) {
+        throw new BadRequestError(
+          `Invalid entry type: ${entry.type}. Must be 'blob' or 'tree'.`
+        );
+      }
+      if (!/^[0-9a-fA-F]{64}$/.test(entry.hash)) {
+        throw new BadRequestError(
+          `Invalid hash format for entry '${entry.name}'.`
+        );
+      }
+    }
+
+    const repo = await findRepositoryById(repositoryId);
+    if (!repo) {
+      throw new NotFoundError(
+        `Repository with ID '${repositoryId}' not found.`
+      );
+    }
+    if (
+      repo.visibility === RepositoryVisibility.PRIVATE &&
+      repo.owner.toString() !== uploadedByUserId.toString()
+    ) {
+      throw new ForbiddenError(
+        "You do not have permission to upload trees to this repository."
+      );
+    }
+
+    const treeHash = await storeTree(
+      entries as ITreeEntry[],
+      uploadedByUserId.toString(),
+      repositoryId
+    );
+    res.status(201).json(
+      successResponse("Tree stored successfully", {
+        hash: treeHash,
+        entriesCount: entries.length,
+      })
+    );
+  }
+);
+
+/**
+ * @route GET /api/content/trees/:hash
+ * @description Retrieves a tree object by its SHA256 hash.
+ * @access Private (requires JWT) - Access depends on repository visibility and user permissions.
+ * NOTE: For a full VCS, you'd likely need to pass repositoryId to check permissions,
+ * but for simplicity here, we assume if you have the tree hash, you're authorized to view it (for now).
+ * A more robust check would involve traversing from a commit to its tree and then checking repo permissions.
+ */
+router.get(
+  "/trees/:hash",
+  protect,
+  async (req: Request, res: Response, next: NextFunction) => {
+    const { hash } = req.params;
+    const authenticatedUserId = req.user?.id;
+
+    if (!authenticatedUserId) {
+      throw new UnauthorizedError("User not authenticated.");
+    }
+
+    if (!hash || !/^[0-9a-fA-F]{64}$/.test(hash)) {
+      throw new BadRequestError("Invalid SHA256 hash format.");
+    }
+
+    const tree = await getTree(hash);
+    res.status(200).json(successResponse("Tree fetched successfully", tree));
   }
 );
 

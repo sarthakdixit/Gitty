@@ -13,6 +13,7 @@ import {
 } from "../errors/apiError";
 import { createHash } from "crypto";
 import { Readable } from "stream";
+import { ITreeEntry, ITree } from "../interfaces/Tree";
 import { IContentBlobMetadata } from "../interfaces/ContentBlobMetadata";
 import { Types } from "mongoose";
 
@@ -101,10 +102,80 @@ const getBlobsByRepositoryAndUser = async (
   }));
 };
 
+const storeTree = async (
+  entries: ITreeEntry[],
+  uploadedByUserId: string,
+  repositoryId: string
+): Promise<string> => {
+  if (!Types.ObjectId.isValid(uploadedByUserId)) {
+    throw new BadRequestError("Invalid uploadedByUserId format.");
+  }
+  if (!Types.ObjectId.isValid(repositoryId)) {
+    throw new BadRequestError("Invalid repositoryId format.");
+  }
+
+  entries.sort((a, b) => a.name.localeCompare(b.name));
+
+  const treeContent = JSON.stringify({ entries });
+  const contentBuffer = Buffer.from(treeContent, "utf8");
+
+  const hash = calculateSha256(contentBuffer);
+
+  const exists = await fileExists(hash);
+  if (exists) {
+    console.log(`Tree with hash ${hash} already exists. Skipping upload.`);
+    return hash;
+  }
+
+  const readableStream = Readable.from(contentBuffer);
+
+  const metadata: IContentBlobMetadata = {
+    hashType: "sha256",
+    originalSize: contentBuffer.length,
+    uploadedAt: new Date(),
+    originalFilename: `tree-${hash}.json`,
+    contentType: "application/json",
+    uploadedByUserId: new Types.ObjectId(uploadedByUserId),
+    repositoryId: new Types.ObjectId(repositoryId),
+  };
+
+  await uploadStream(hash, readableStream, metadata);
+  return hash;
+};
+
+const getTree = async (hash: string): Promise<ITree> => {
+  const downloadStream = await getBlob(hash);
+
+  return new Promise((resolve, reject) => {
+    let data = "";
+    downloadStream.on("data", (chunk) => (data += chunk.toString()));
+    downloadStream.on("end", () => {
+      const tree = JSON.parse(data);
+      if (!tree || !Array.isArray(tree.entries)) {
+        return reject(
+          new BadRequestError(
+            `Content with hash '${hash}' is not a valid tree format.`
+          )
+        );
+      }
+      resolve(tree as ITree);
+    });
+    downloadStream.on("error", (err) => {
+      reject(
+        new InternalServerError(
+          `Failed to download tree content for hash '${hash}': ${err.message}`
+        )
+      );
+    });
+  });
+};
+
 export {
   storeBlob,
   getBlob,
   calculateSha256,
   fileExists,
   getBlobsByRepositoryAndUser,
+  storeTree,
+  getTree,
 };
