@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 import { RepositoryVisibility } from "../models/Repository";
 
-export interface IRepository extends Document {
+export interface IRepositoryInfo extends Document {
   _id: Types.ObjectId;
   name: string;
   description?: string;

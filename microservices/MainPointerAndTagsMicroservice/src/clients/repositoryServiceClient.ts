@@ -3,12 +3,12 @@ import {
   InternalServerError,
   NotFoundError,
 } from "../errors/apiError";
-import { IRepository } from "../interfaces/RepositoryInfo";
+import { IRepositoryInfo } from "../interfaces/RepositoryInfo";
 
 const getRepositoryDetailsFromService = async (
   repositoryId: string,
   token: string
-): Promise<IRepository> => {
+): Promise<IRepositoryInfo> => {
   const repoServiceUrl = process.env.REPOSITORY_SERVICE_URL;
   if (!repoServiceUrl) {
     throw new InternalServerError("REPOSITORY_SERVICE_URL is not configured.");
@@ -43,7 +43,7 @@ const getRepositoryDetailsFromService = async (
     );
   }
 
-  return data.data as IRepository;
+  return data.data as IRepositoryInfo;
 };
 
-export default getRepositoryDetailsFromService;
+export { getRepositoryDetailsFromService };
